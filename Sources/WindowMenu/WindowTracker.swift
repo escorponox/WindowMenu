@@ -58,6 +58,9 @@ final class WindowTracker {
             if axCache[pid] == nil { axCache[pid] = axWindows(pid: pid) }
             let ax = axCache[pid]?[wid]
             if trusted && ax == nil { continue }   // descarta ventanas "fantasma"
+            // Durante la animación hacia el Dock sigue en pantalla, pero ya encima del monitor del Dock:
+            // se trata como minimizada para no perder su monitor.
+            if let ax, axBool(ax, kAXMinimizedAttribute) == true { continue }
 
             let display = Self.displayID(of: Self.bestScreen(for: Self.toAppKit(cgBounds)))
             if let display { lastDisplay[wid] = display }

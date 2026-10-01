@@ -52,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func maxWidth(_ monitor: String?) -> CGFloat { CGFloat(setting("maxWidth", monitor) as? Double ?? 700) }
     private func alignRight(_ monitor: String?) -> Bool { setting("alignRight", monitor) as? Bool ?? true }
 
+    // Preferencias de la app: no son ajustes de barra, así que no se personalizan por monitor.
+    private var minimizeOnClick: Bool { defaults.bool(forKey: "minimizeOnClick") }
+
     /// Rellena los ajustes de un monitor con los globales que le falten.
     private func completed(_ settings: [String: Any]) -> [String: Any] {
         var d = settings
@@ -245,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func handleClick(_ item: TaskItem) {
-        if item.isFocused && !item.window.isMinimized {
+        if item.isFocused && !item.window.isMinimized && minimizeOnClick {
             tracker.minimize(item.window)          // clic en la activa = minimizar (como Windows)
         } else {
             tracker.focus(item.window)
@@ -295,6 +298,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let login = item("Abrir al iniciar sesión", #selector(toggleLaunchAtLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
+        let minimize = item("Minimizar al hacer clic en la ventana activa", #selector(toggleMinimizeOnClick))
+        minimize.state = minimizeOnClick ? .on : .off
+        menu.addItem(minimize)
         menu.addItem(updateItem())
         menu.addItem(NSMenuItem(title: "Salir", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         return menu
@@ -426,5 +432,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
             else { try SMAppService.mainApp.register() }
         } catch { NSLog("Launch at login error: \(error)") }
+    }
+
+    @objc private func toggleMinimizeOnClick() {
+        defaults.set(!minimizeOnClick, forKey: "minimizeOnClick")
     }
 }
