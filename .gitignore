@@ -16,3 +16,10 @@ DerivedData/
 
 # Claude Code (any level)
 .claude/
+
+# CONTEXT.md is ignored globally; track it in this repo
+!CONTEXT.md
+
+# Release artifacts and signing certificate
+WindowMenu.zip
+*.p12

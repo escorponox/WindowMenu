@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timer: Timer?
     private var statusTimer: Timer?
 
+    private let updater = Updater()
+    private var updateTimer: Timer?
+    private var installingUpdate = false
+
     /// Distancia desde el borde derecho del monitor hasta el primer icono de la barra de menús.
     private var statusOffset: CGFloat?
     private var scanningStatusItems = false
@@ -97,10 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusTimer = Timer.scheduledTimer(timeInterval: 2, target: self, selector: #selector(scanStatusItems),
                                            userInfo: nil, repeats: true)
 
+        updateTimer = Timer.scheduledTimer(timeInterval: 24 * 60 * 60, target: self,
+                                           selector: #selector(checkForUpdatesInBackground),
+                                           userInfo: nil, repeats: true)
+
         if !tracker.isTrusted { tracker.requestAccessibility() }
         rebuildBars()
         scanStatusItems()
         refresh()
+        checkForUpdatesInBackground()
     }
 
     // MARK: Monitores
@@ -286,6 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let login = item("Abrir al iniciar sesión", #selector(toggleLaunchAtLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
+        menu.addItem(updateItem())
         menu.addItem(NSMenuItem(title: "Salir", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         return menu
     }
@@ -345,6 +355,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let monitor = sender.representedObject as? String else { return }
         defaults.removeObject(forKey: "display.\(monitor)")
         invalidate()
+    }
+
+    // MARK: Actualizaciones
+
+    private func updateItem() -> NSMenuItem {
+        if installingUpdate {
+            return NSMenuItem(title: "Actualizando…", action: nil, keyEquivalent: "")
+        }
+        if let release = updater.available {
+            return item("Actualizar a la v\(release.version)", #selector(installUpdate))
+        }
+        return item("Buscar actualizaciones… (v\(updater.currentVersion))", #selector(checkForUpdates))
+    }
+
+    /// Comprobación periódica: si hay versión nueva, aparece en el menú; los errores se ignoran.
+    @objc private func checkForUpdatesInBackground() {
+        Task { _ = try? await updater.check() }
+    }
+
+    @objc private func checkForUpdates() {
+        Task {
+            do {
+                if let release = try await updater.check() {
+                    if alert("Hay una nueva versión: v\(release.version)", "Tienes la v\(updater.currentVersion).",
+                             buttons: ["Actualizar", "Más tarde"]) == .alertFirstButtonReturn {
+                        installUpdate()
+                    }
+                } else {
+                    alert("WindowMenu está actualizada", "Tienes la última versión (v\(updater.currentVersion)).")
+                }
+            } catch {
+                alert("No se ha podido buscar actualizaciones", error.localizedDescription)
+            }
+        }
+    }
+
+    @objc private func installUpdate() {
+        guard let release = updater.available, !installingUpdate else { return }
+        installingUpdate = true
+        Task {
+            do {
+                try await updater.install(release)   // si va bien, la app se reinicia
+            } catch {
+                installingUpdate = false
+                alert("No se ha podido actualizar", error.localizedDescription)
+            }
+        }
+    }
+
+    @discardableResult
+    private func alert(_ title: String, _ text: String, buttons: [String] = ["OK"]) -> NSApplication.ModalResponse {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        buttons.forEach { alert.addButton(withTitle: $0) }
+        NSApp.activate(ignoringOtherApps: true)   // sin Dock, la alerta saldría detrás
+        return alert.runModal()
     }
 
     @objc private func openAccessibilitySettings() {
