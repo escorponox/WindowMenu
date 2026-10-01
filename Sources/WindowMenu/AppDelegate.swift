@@ -34,21 +34,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let defaults = UserDefaults.standard
 
-    // Ajustes: globales en sus claves de siempre; los de cada monitor, en "display.<UUID>",
-    // solo con los valores cambiados (el resto se hereda del global). `monitor == nil` = global.
-    private func overrides(_ monitor: String) -> [String: Any] {
+    // Ajustes: globales en sus claves de siempre; los de cada monitor personalizado, en "display.<UUID>",
+    // con una copia completa (no hereda nada del global). `monitor == nil` = global.
+    private let defaultSettings: [String: Any] = ["showTitles": true, "maxWidth": 700.0, "alignRight": true]
+
+    private func customSettings(_ monitor: String) -> [String: Any] {
         defaults.dictionary(forKey: "display.\(monitor)") ?? [:]
     }
     private func setting(_ key: String, _ monitor: String?) -> Any? {
-        monitor.flatMap { overrides($0)[key] } ?? defaults.object(forKey: key)
+        monitor.flatMap { customSettings($0)[key] } ?? defaults.object(forKey: key)
     }
     private func showTitles(_ monitor: String?) -> Bool { setting("showTitles", monitor) as? Bool ?? true }
     private func maxWidth(_ monitor: String?) -> CGFloat { CGFloat(setting("maxWidth", monitor) as? Double ?? 700) }
     private func alignRight(_ monitor: String?) -> Bool { setting("alignRight", monitor) as? Bool ?? true }
 
+    /// Rellena los ajustes de un monitor con los globales que le falten.
+    private func completed(_ settings: [String: Any]) -> [String: Any] {
+        var d = settings
+        for key in defaultSettings.keys where d[key] == nil { d[key] = defaults.object(forKey: key) }
+        return d
+    }
+
     private func set(_ value: Any, _ key: String, _ monitor: String?) {
         if let monitor {
-            var d = overrides(monitor)
+            var d = completed(customSettings(monitor))   // al personalizarlo, se congela con los globales actuales
             d[key] = value
             defaults.set(d, forKey: "display.\(monitor)")
         } else {
@@ -58,7 +67,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        defaults.register(defaults: ["showTitles": true, "maxWidth": 700.0, "alignRight": true])
+        defaults.register(defaults: defaultSettings)
+        // Monitores guardados cuando solo se guardaban los valores cambiados: completarlos ya.
+        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix("display.") {
+            guard let d = value as? [String: Any], !d.isEmpty else { continue }
+            let full = completed(d)
+            if full.count != d.count { defaults.set(full, forKey: key) }
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "macwindow.on.rectangle",
@@ -261,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             sub.addItem(.separator())
             let reset = item("Usar ajustes globales", #selector(resetMonitor(_:)))
             reset.representedObject = monitor
-            if overrides(monitor).isEmpty { reset.action = nil }   // deshabilitado
+            if customSettings(monitor).isEmpty { reset.action = nil }   // deshabilitado
             sub.addItem(reset)
             this.submenu = sub
             menu.addItem(this)
